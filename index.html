@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ロボット歩行ラボ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+<style>
+/* VOICE: a test bench readout — clinical, precise, calm.
+   IDEA: an instrument panel bolted next to a test rig.
+   PICTURE: the live 3D rig itself, large, with a moving readout strip.
+   COLOUR and TYPE: aluminium, black, one orange pointer; Geist + Noto Sans JP.
+   LAYOUT: rig left, controls right; full-width report band with findings first. */
+:root{color-scheme:light dark;--bg:light-dark(#e9eaec,#141517);--panel:light-dark(#f6f6f7,#1d1f22);--ink:light-dark(#0d0e10,#ececee);--mute:light-dark(#5d6168,#9a9ea6);--line:light-dark(#cfd1d5,#2e3136);--acc:#ff4f00;--good:light-dark(#0a7a46,#3ccf8e);--mid:light-dark(#a35a00,#f0a640)}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 Geist,"Noto Sans JP",system-ui,sans-serif;overflow-x:clip}
+header{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:baseline;padding:18px max(3vw,16px) 10px}
+h1{font-size:28px;line-height:1.05;margin:0;font-weight:700}
+header p{margin:0;color:var(--mute);font-size:14px}
+.rig{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;padding:0 max(3vw,16px) 16px}
+.view{position:relative;min-height:480px;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.view canvas{position:absolute;inset:0;width:100%!important;height:100%!important}
+.hud{position:absolute;left:12px;bottom:10px;right:12px;display:flex;flex-wrap:wrap;gap:4px 18px;font:500 14px Geist,monospace;font-variant-numeric:tabular-nums;pointer-events:none}
+.hud b{color:var(--acc)}
+.side{display:flex;flex-direction:column;gap:14px}
+fieldset{border:1px solid var(--line);border-radius:10px;background:var(--panel);margin:0;padding:12px 14px;display:grid;gap:10px}
+legend{font-weight:700;font-size:14px;padding:0 4px}
+label{font-size:14px;color:var(--mute);display:grid;gap:4px}
+input,select,button{font:inherit;font-size:16px;min-height:44px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);padding:0 10px}
+input[type=range]{padding:0;min-height:28px;accent-color:var(--acc)}
+input[type=file]{padding:8px}
+button{cursor:pointer;font-weight:500}
+button.go{background:var(--acc);color:#fff;border-color:var(--acc)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+button:disabled{opacity:.5;cursor:wait}
+.row{display:flex;gap:8px}.row>*{flex:1}
+.val{float:right;color:var(--ink);font-variant-numeric:tabular-nums}
+.small{font-size:13px;color:var(--mute);margin:0}
+.poses{max-height:340px;overflow-y:auto;display:grid;gap:6px;padding-right:6px}.poses label{font-size:13px}
+label.check{display:flex;align-items:center;gap:8px;color:var(--ink)}label.check input{min-height:20px;width:20px;accent-color:var(--acc)}
+#poseStats b{color:var(--ink)}#poseStats b.bad{color:var(--acc)}
+.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden}.bar i{display:block;height:100%;background:var(--acc)}
+#msg{font-size:14px;min-height:1.5em}#msg.err{color:var(--acc)}
+.band{padding:clamp(20px,3vw,40px) max(3vw,16px);border-top:1px solid var(--line)}
+h2{font-size:22px;margin:0 0 14px;line-height:1.2}
+.figs{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:24px}
+.figs div{background:var(--panel);padding:12px 14px}.figs span{display:block;font-size:13px;color:var(--mute)}.figs b{font-size:24px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.sugg{display:grid;gap:10px;margin:0 0 28px;padding:0;list-style:none}
+.sugg li{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 16px 12px 52px;position:relative}
+.sugg li::before{content:attr(data-tag);position:absolute;left:12px;top:13px;font-size:12px;font-weight:700;width:30px;text-align:center;border-radius:4px;padding:2px 0;color:#fff;background:var(--mute)}
+.sugg li[data-lv=high]::before{background:var(--acc)}.sugg li[data-lv=mid]::before{background:var(--mid)}.sugg li[data-lv=good]::before{background:var(--good)}
+.sugg b{display:block}.sugg p{margin:2px 0 0;font-size:15px;color:var(--mute)}
+.cols{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:24px}
+table{border-collapse:collapse;width:100%;font-size:14px;font-variant-numeric:tabular-nums}
+th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}th:first-child,td:first-child{text-align:left}
+th{font-weight:500;color:var(--mute)}
+td .bar{width:80px;display:inline-block;vertical-align:middle;margin-left:6px}
+.heat td{text-align:center;color:#fff;font-weight:500}
+.fig{position:relative;min-height:220px}.fig>svg{position:absolute;inset:0;width:100%;height:100%}
+pre,.scroll{overflow-x:auto}
+.foot{color:var(--mute)}.foot p{margin:0 0 6px;max-width:70em}.foot a{color:inherit}
+@media(max-width:900px){.rig,.cols{grid-template-columns:minmax(0,1fr)}.view{min-height:360px}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<header><h1>ロボット歩行ラボ</h1><p>URDF を読み込み → 物理シミュレーションで立位・歩行を試験 → 設計と制御の改善点を提案</p></header>
+<section class="rig">
+  <div class="view" id="view"><div class="hud" id="hud">読み込み中…</div></div>
+  <div class="side">
+    <fieldset><legend>ロボットを読み込む</legend>
+      <label>サンプル<select id="sample"><option value="quad">四足ロボット（サンプル）</option><option value="biped">人型ロボット（サンプル）</option></select></label>
+      <label>GitHub の URDF の URL<input id="url" type="url" placeholder="https://github.com/…/robot.urdf"></label>
+      <button id="loadUrl">URL から読み込む</button>
+      <label>ファイル（.urdf）<input id="file" type="file" accept=".urdf,.xml"></label>
+      <p class="small">URL から読み込むと、同じリポジトリの STL メッシュも取得します（取得できない部品はカプセルで近似）。xacro は展開済みの URDF にしてください。</p>
+      <div id="msg"></div>
+    </fieldset>
+    <fieldset><legend>試験条件</legend>
+      <label>歩行周波数 <span class="val" id="vfreq"></span><input id="freq" type="range" min="0.4" max="3" step="0.1" value="1.5"></label>
+      <label>関節の振り幅 <span class="val" id="vamp"></span><input id="amp" type="range" min="0.05" max="0.7" step="0.05" value="0.3"></label>
+      <label>制御ゲイン倍率 <span class="val" id="vgain"></span><input id="gain" type="range" min="0.25" max="4" step="0.25" value="1"></label>
+      <label>床の摩擦係数 <span class="val" id="vfriction"></span><input id="friction" type="range" min="0.2" max="1.5" step="0.1" value="0.8"></label>
+      <div class="row"><button id="playStand">立位を再生</button><button id="playGait">歩行を再生</button></div>
+      <button class="go" id="diag">総合診断と改善提案</button>
+      <div class="bar"><i id="prog" style="width:0"></i></div>
+    </fieldset>
+    <fieldset><legend>初期姿勢</legend>
+      <p class="small" id="poseStats"></p>
+      <label class="check"><input type="checkbox" id="mirror" checked> 左右対称に動かす</label>
+      <div class="poses" id="poseList"></div>
+      <div class="row"><button id="poseReset">自動に戻す</button><button id="poseCopy">姿勢をコピー</button></div>
+      <label>姿勢を貼り付け（JSON）<input id="posePaste" placeholder='{"FL_knee": -1.2, …}'></label>
+      <button id="poseApply">貼り付けた姿勢を適用</button>
+      <p class="small">スライダーを離すと、その姿勢から立位シミュレーションを始めます。診断もこの姿勢を基準に行います（単位 rad、直動関節は m）。</p>
+    </fieldset>
+  </div>
+</section>
+<section class="band" id="report"><h2>診断レポート</h2><p class="small">「総合診断と改善提案」を押すと、立位テスト・24通りの歩き方の探索・感度分析を行い、ここに結果が出ます。</p></section>
+<footer class="band small foot">
+  <p>このツールの結果は、簡略化した物理シミュレーションによる<strong>目安</strong>です。実機の安全性や設計判断を保証するものではありません。読み込んだロボットのデータは、それぞれの作者のライセンスに従います。データはすべてお使いのブラウザ内で処理され、外部のサーバーには送信されません（ロボットデータ・ライブラリの取得を除く）。</p>
+  <p>MIT License ・ 物理エンジン <a href="https://rapier.rs/">Rapier</a>（Apache-2.0）・ 3D表示 <a href="https://threejs.org/">three.js</a>（MIT）</p>
+</footer>
+<script type="module" src="./app.js"></script>
+</body>
+</html>
